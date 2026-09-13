@@ -25,8 +25,8 @@ A Go toolkit for synthetic event generation, historical event frequency modeling
 3. **Online / Streaming Anomaly Detector (`cmd/anomaly`)**
    - Takes a trained model JSON and the difference order parameter $n$.
    - Computes $n$-th order time differences $\Delta_n(t_i) = t_i - t_{i-n}$.
-   - Evaluates the expected rate as the duration-weighted average of autoregressive estimates for every bucket overlapping the interval from the earliest of the preceding $n$ events through the current event.
-   - Computes anomaly statistic $S(t_i) = \frac{t_i - t_{i-n}}{\text{expected\_rate}}$.
+   - Evaluates the expected averate rate $\lambda_{t_{i-n} \ldots t_i}$ as the duration-weighted average of autoregressive estimates for every bucket overlapping the interval from the earliest of the preceding $n$ events through the current event.
+   - Computes anomaly statistic $S(t_i) = \lambda_{t_{i-n} \ldots t_i} \Delta_n(t_i)  $.
    - Outputs CSV formatted stream with `time`, `nth_order_diff`, `expected_rate`, and `anomaly_statistic`.
 
 ## Build
@@ -41,9 +41,9 @@ go build -o bin/anomaly ./cmd/anomaly
 
 ### 1. Generating Synthetic Event Data
 
-Generate 30 days of synthetic event data split into 90% (`train_events.csv`) and 10% (`test_events.csv`):
+Generate 100 days of synthetic event data split into 72% (`train_events.csv`) and 28% (`test_events.csv`):
 ```bash
-./bin/generate -k_scale 500 -k_offset 100 -total_time 30d -out_90 train_events.csv -out_10 test_events.csv
+./bin/generate -k_scale 500 -k_offset 100 -total_time 100d -out_90 train_events.csv -out_10 test_events.csv -split 0.72
 ```
 
 ### 2. Training Historical Model
@@ -51,10 +51,10 @@ Generate 30 days of synthetic event data split into 90% (`train_events.csv`) and
 Create a configuration JSON (e.g. `config.json`):
 ```json
 {
-  "bucket_interval": 3600.0,
-  "horizon": 24,
-  "regularization_penalty": 0.01,
-  "epsilon": 1.0,
+  "bucket_interval": 1800.0,
+  "horizon": 336,
+  "regularization_penalty": 0.04,
+  "epsilon": 0.5,
   "max_iterations": 2000,
   "tolerance": 1e-6
 }
