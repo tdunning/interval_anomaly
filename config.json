@@ -1,0 +1,8 @@
+{
+  "bucket_interval": 1800.0,
+  "horizon": 340,
+  "regularization_penalty": 0.04,
+  "epsilon": 0.5,
+  "max_iterations": 2000,
+  "tolerance": 1e-6
+}
