@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Ted Dunning
+// SPDX-License-Identifier: MIT
+
 package test
 
 import (
@@ -41,7 +44,7 @@ func TestEndToEndPipeline(t *testing.T) {
 	// 50 buckets of 10s = 500s total duration
 	for bucket := 0; bucket < 50; bucket++ {
 		// Event rate fluctuates between 2 and 10 events per bucket
-		rate := 3 + (bucket % 5) * 2
+		rate := 3 + (bucket%5)*2
 		for ev := 0; ev < rate; ev++ {
 			offset := float64(bucket)*10.0 + rng.Float64()*10.0
 			eventTime := baseTime.Add(time.Duration(offset * float64(time.Second)))

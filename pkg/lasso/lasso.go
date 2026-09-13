@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Ted Dunning
+// SPDX-License-Identifier: MIT
+
 package lasso
 
 import (
@@ -8,9 +11,9 @@ import (
 // Config defines the hyperparameters and settings for L1 regularized linear regression.
 type Config struct {
 	Lambda        float64 `json:"regularization_penalty"` // Regularization penalty size (L1 lambda)
-	MaxIterations int     `json:"max_iterations"`          // Maximum number of coordinate descent iterations
-	Tolerance     float64 `json:"tolerance"`               // Convergence tolerance (max parameter change)
-	FitIntercept  bool    `json:"fit_intercept"`           // Whether to fit an unregularized intercept
+	MaxIterations int     `json:"max_iterations"`         // Maximum number of coordinate descent iterations
+	Tolerance     float64 `json:"tolerance"`              // Convergence tolerance (max parameter change)
+	FitIntercept  bool    `json:"fit_intercept"`          // Whether to fit an unregularized intercept
 }
 
 // DefaultConfig returns default configuration for Lasso regression.

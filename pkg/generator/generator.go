@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Ted Dunning
+// SPDX-License-Identifier: MIT
+
 package generator
 
 import (
@@ -47,7 +50,7 @@ func DefaultConfig() GeneratorConfig {
 // Returns rate multiplier in events per hour.
 func K(tSec float64, kScale, kOffset float64) float64 {
 	sinTerm := math.Sin(2.0 * math.Pi * (tSec / WeekInSeconds))
-	return kScale*(math.Exp(2.0) - math.Exp(-2.0*sinTerm)) + kOffset
+	return kScale*(math.Exp(2.0)-math.Exp(-2.0*sinTerm)) + kOffset
 }
 
 // RatePerHour calculates the instantaneous rate in events per hour at time tSec (seconds).
@@ -60,7 +63,7 @@ func RatePerHour(tSec float64, kScale, kOffset, offsetDays float64) float64 {
 	cosTerm1 := math.Cos(2.0 * math.Pi * (tDays - offsetDays))
 	cosTerm2 := math.Cos(2.0 * math.Pi * (tDays + offsetDays))
 
-	r := kt*(math.Exp(-2.0*cosTerm1) + math.Exp(-1.9*cosTerm2))
+	r := kt * (math.Exp(-2.0*cosTerm1) + math.Exp(-1.9*cosTerm2))
 	if r < 0 {
 		return 0
 	}
@@ -79,14 +82,14 @@ func MaxRatePerSecond(totalSeconds float64, kScale, kOffset, offsetDays float64)
 	// When sin = -1, -exp(2) is subtracted, so k(t) is smaller.
 	// When sin = 1, -exp(-2) is subtracted (~ -0.135), so k(t) reaches max:
 	// k_max = kScale * exp(2) - exp(-2) + kOffset
-	kMax := kScale*(math.Exp(2.0) - math.Exp(-2.0)) + kOffset
+	kMax := kScale*(math.Exp(2.0)-math.Exp(-2.0)) + kOffset
 	if kMax < 0 {
 		kMax = 0
 	}
 
 	// For exp(-2*cos(...)), maximum is exp(2) when cos(...) = -1.
 	// For exp(-1.9*cos(...)), maximum is exp(1.9) when cos(...) = -1.
-	maxPerHour := kMax*(math.Exp(2.0) + math.Exp(1.9))
+	maxPerHour := kMax * (math.Exp(2.0) + math.Exp(1.9))
 
 	return (maxPerHour / HourInSeconds) * 1.05 // 5% safety margin
 }

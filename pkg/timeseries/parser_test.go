@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Ted Dunning
+// SPDX-License-Identifier: MIT
+
 package timeseries
 
 import (
@@ -62,14 +65,14 @@ func TestParseTime(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name:        "Invalid string",
-			input:       "not-a-date",
-			wantErr:     true,
+			name:    "Invalid string",
+			input:   "not-a-date",
+			wantErr: true,
 		},
 		{
-			name:        "Empty string",
-			input:       "",
-			wantErr:     true,
+			name:    "Empty string",
+			input:   "",
+			wantErr: true,
 		},
 	}
 

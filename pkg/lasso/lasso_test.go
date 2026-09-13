@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Ted Dunning
+// SPDX-License-Identifier: MIT
+
 package lasso
 
 import (
