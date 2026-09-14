@@ -12,7 +12,7 @@ import (
 )
 
 func TestStreamDetector(t *testing.T) {
-	// Model with constant expected count = 4.5.
+	// Constant expected count of 4.5 per 10s bucket, i.e. a rate of 0.45/s.
 	m := &model.ModelOutput{
 		BucketInterval: 10.0,
 		Horizon:        2,
@@ -40,8 +40,8 @@ func TestStreamDetector(t *testing.T) {
 	}
 
 	// Event 2 at t = 105.0 -> 2nd order diff = 105.0 - 100.0 = 5.0
-	// Expected rate = 4.5
-	// Anomaly statistic = 5.0 / 4.5
+	// Expected rate = 4.5 / 10 = 0.45 events per second
+	// Anomaly statistic = diff * rate / n = 5.0 * 0.45 / 2 = 1.125
 	r2, err := det.ProcessEvent(timeseries.Event{Seconds: 105.0, RawText: "105.0"})
 	if err != nil || r2 == nil {
 		t.Fatalf("expected valid record for r2, got err=%v, r2=%v", err, r2)
@@ -50,11 +50,11 @@ func TestStreamDetector(t *testing.T) {
 	if math.Abs(r2.NthOrderDiff-5.0) > 1e-4 {
 		t.Errorf("expected nth_order_diff 5.0, got %f", r2.NthOrderDiff)
 	}
-	if math.Abs(r2.ExpectedRate-4.5) > 1e-4 {
-		t.Errorf("expected expected_rate 4.5, got %f", r2.ExpectedRate)
+	if math.Abs(r2.ExpectedRate-0.45) > 1e-4 {
+		t.Errorf("expected expected_rate 0.45, got %f", r2.ExpectedRate)
 	}
-	if math.Abs(r2.AnomalyStatistic-(5.0/4.5)) > 1e-4 {
-		t.Errorf("expected anomaly_statistic %f, got %f", 5.0/4.5, r2.AnomalyStatistic)
+	if math.Abs(r2.AnomalyStatistic-1.125) > 1e-4 {
+		t.Errorf("expected anomaly_statistic 1.125, got %f", r2.AnomalyStatistic)
 	}
 
 	// Event 3 at t = 107.0 -> diff = 107.0 - 102.0 = 5.0
@@ -69,9 +69,8 @@ func TestStreamDetector(t *testing.T) {
 
 func TestStreamDetectorAveragesOverlappingBucketRates(t *testing.T) {
 	// The regression is evaluated at the end of the first bucket, after its
-	// single event is added to the lag window, producing an estimate of 2.
-	// The interval [8, 12] therefore uses 2 for both the closed and open
-	// portions until the second bucket closes.
+	// single event enters the lag window, giving a count of 2 per 10s bucket.
+	// Both halves of the interval [8, 12] therefore use a rate of 0.2/s.
 	m := &model.ModelOutput{
 		BucketInterval: 10.0,
 		Horizon:        1,
@@ -90,7 +89,7 @@ func TestStreamDetectorAveragesOverlappingBucketRates(t *testing.T) {
 	if err != nil || record == nil {
 		t.Fatalf("expected record at t=12, got err=%v record=%v", err, record)
 	}
-	if math.Abs(record.ExpectedRate-2.0) > 1e-4 {
-		t.Errorf("expected duration-weighted rate 2.0, got %f", record.ExpectedRate)
+	if math.Abs(record.ExpectedRate-0.2) > 1e-4 {
+		t.Errorf("expected duration-weighted rate 0.2, got %f", record.ExpectedRate)
 	}
 }

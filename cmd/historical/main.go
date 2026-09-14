@@ -13,6 +13,8 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"interval_anomaly/pkg/lasso"
 	"interval_anomaly/pkg/model"
@@ -24,6 +26,7 @@ func main() {
 	inputPath := flag.String("input", "", "Path to input events file (defaults to stdin)")
 	outputPath := flag.String("output", "", "Path to output model JSON file (defaults to stdout)")
 	diagnosticPath := flag.String("diagnostic", "", "Path to diagnostic CSV with actual and predicted bucket rates")
+	wikiFormat := flag.Bool("wiki", false, "Read hourly pagecounts rows (date,time,term,views,...) instead of event times")
 	colIndex := flag.Int("col", 0, "Column index (0-based) for timestamp in CSV data")
 	flag.Parse()
 
@@ -40,6 +43,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *wikiFormat {
+		cfg.BucketInterval = 3600.0
+		fmt.Fprintf(os.Stderr, "Wiki format selected: bucket_interval forced to 3600s (1 hour)\n")
 	}
 
 	fmt.Fprintf(os.Stderr, "Config loaded: bucket_interval=%.3fs, horizon=%d, lambda=%.4e, epsilon=%.4e\n",
@@ -62,46 +70,61 @@ func main() {
 	}
 
 	// Parse timestamps
-	scanner := bufio.NewScanner(reader)
-	var events []timeseries.Event
-	lineNum := 0
-	skippedHeader := 0
+	var bucketed *timeseries.BucketedSeries
+	var numEvents int
 
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		ev, err := timeseries.ExtractTimestampFromLine(line, *colIndex)
+	if *wikiFormat {
+		fmt.Fprintf(os.Stderr, "Reading hourly wiki counts...\n")
+		bucketed, err = readWikiCounts(reader)
 		if err != nil {
-			// If line 1 fails, it might be a CSV header
-			if lineNum == 1 {
-				skippedHeader++
+			fmt.Fprintf(os.Stderr, "Error reading wiki counts: %v\n", err)
+			os.Exit(1)
+		}
+		numEvents = bucketed.TotalEvents
+		fmt.Fprintf(os.Stderr, "Parsed %d views into %d hourly buckets\n", numEvents, len(bucketed.Counts))
+	} else {
+		scanner := bufio.NewScanner(reader)
+		var events []timeseries.Event
+		lineNum := 0
+		skippedHeader := 0
+
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Text()
+			ev, err := timeseries.ExtractTimestampFromLine(line, *colIndex)
+			if err != nil {
+				// If line 1 fails, it might be a CSV header
+				if lineNum == 1 {
+					skippedHeader++
+					continue
+				}
+				// Skip empty or unparseable lines with warning if small amount
 				continue
 			}
-			// Skip empty or unparseable lines with warning if small amount
-			continue
+			events = append(events, ev)
 		}
-		events = append(events, ev)
-	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-		os.Exit(1)
-	}
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			os.Exit(1)
+		}
 
-	if len(events) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: no valid events parsed from input\n")
-		os.Exit(1)
-	}
+		if len(events) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: no valid events parsed from input\n")
+			os.Exit(1)
+		}
 
-	fmt.Fprintf(os.Stderr, "Parsed %d events across %d lines (skipped %d header/invalid lines)\n",
-		len(events), lineNum, skippedHeader)
+		numEvents = len(events)
+		fmt.Fprintf(os.Stderr, "Parsed %d events across %d lines (skipped %d header/invalid lines)\n",
+			len(events), lineNum, skippedHeader)
 
-	// Bucket events
-	fmt.Fprintf(os.Stderr, "Bucketing events with interval %.3f seconds...\n", cfg.BucketInterval)
-	bucketed, err := timeseries.BucketEvents(events, cfg.BucketInterval)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error bucketing events: %v\n", err)
-		os.Exit(1)
+		// Bucket events
+		fmt.Fprintf(os.Stderr, "Bucketing events with interval %.3f seconds...\n", cfg.BucketInterval)
+		bucketed, err = timeseries.BucketEvents(events, cfg.BucketInterval)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error bucketing events: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "Bucketing complete: %d buckets spanned from t=%.3f to t=%.3f\n",
@@ -171,7 +194,7 @@ func main() {
 		Intercept:             fitRes.Model.Intercept,
 		Weights:               fitRes.Model.Weights,
 		TrainingStats: &model.TrainingStats{
-			NumEvents:      len(events),
+			NumEvents:      numEvents,
 			NumBuckets:     len(bucketed.Counts),
 			FirstEventTime: bucketed.StartTime,
 			LastEventTime:  bucketed.StartTime + float64(len(bucketed.Counts))*cfg.BucketInterval,
@@ -198,6 +221,66 @@ func main() {
 	} else {
 		fmt.Println(string(jsonBytes))
 	}
+}
+
+// readWikiCounts aggregates hourly pagecounts rows (date,time,term,views,...) into one bucket per hour.
+func readWikiCounts(reader io.Reader) (*timeseries.BucketedSeries, error) {
+	csvReader := csv.NewReader(reader)
+	csvReader.FieldsPerRecord = -1
+
+	countsByHour := make(map[int64]float64)
+	var minHour, maxHour int64
+	total := 0.0
+	seen := false
+
+	for {
+		record, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(record) < 4 {
+			continue
+		}
+
+		stamp, err := time.Parse("20060102150405", strings.TrimSpace(record[0])+strings.TrimSpace(record[1]))
+		if err != nil {
+			continue // header or malformed row
+		}
+		views, err := strconv.ParseFloat(strings.TrimSpace(record[3]), 64)
+		if err != nil {
+			continue
+		}
+
+		hour := stamp.Unix() / 3600
+		countsByHour[hour] += views
+		total += views
+		if !seen || hour < minHour {
+			minHour = hour
+		}
+		if !seen || hour > maxHour {
+			maxHour = hour
+		}
+		seen = true
+	}
+
+	if !seen {
+		return nil, fmt.Errorf("no valid hourly count rows parsed from input")
+	}
+
+	counts := make([]float64, maxHour-minHour+1)
+	for hour, count := range countsByHour {
+		counts[hour-minHour] = count
+	}
+
+	return &timeseries.BucketedSeries{
+		StartTime:      float64(minHour * 3600),
+		BucketInterval: 3600.0,
+		Counts:         counts,
+		TotalEvents:    int(total),
+	}, nil
 }
 
 func writeDiagnosticCSV(path string, bucketed *timeseries.BucketedSeries, dataset *timeseries.ARDataset, fittedModel lasso.Model) error {

@@ -71,8 +71,8 @@ func TestBuildARDataset(t *testing.T) {
 	if math.Abs(dataset.Y[0]-expectedY0) > 1e-6 {
 		t.Errorf("sample 0: expected Y=%f, got %f", expectedY0, dataset.Y[0])
 	}
-	if dataset.X[0][0] != 2.0 || dataset.X[0][1] != 1.0 {
-		t.Errorf("sample 0: expected X=[2, 1], got %v", dataset.X[0])
+	if math.Abs(dataset.X[0][0]-math.Log(2.5)) > 1e-6 || math.Abs(dataset.X[0][1]-math.Log(1.5)) > 1e-6 {
+		t.Errorf("sample 0: expected X=[log(2.5), log(1.5)], got %v", dataset.X[0])
 	}
 
 	// Sample 3 (target index 5):
@@ -82,7 +82,7 @@ func TestBuildARDataset(t *testing.T) {
 	if math.Abs(dataset.Y[3]-expectedY3) > 1e-6 {
 		t.Errorf("sample 3: expected Y=%f, got %f", expectedY3, dataset.Y[3])
 	}
-	if dataset.X[3][0] != 5.0 || dataset.X[3][1] != 4.0 {
-		t.Errorf("sample 3: expected X=[5, 4], got %v", dataset.X[3])
+	if math.Abs(dataset.X[3][0]-math.Log(5.5)) > 1e-6 || math.Abs(dataset.X[3][1]-math.Log(4.5)) > 1e-6 {
+		t.Errorf("sample 3: expected X=[log(5.5), log(4.5)], got %v", dataset.X[3])
 	}
 }
