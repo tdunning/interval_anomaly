@@ -9,19 +9,25 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // pagecounts-20160101-000000.gz
 var dumpFilePattern = regexp.MustCompile(`^pagecounts-(\d{8})-(\d{6})\.gz$`)
 
+var verbose bool
+
 func main() {
 	inputDir := flag.String("input", "dumps.wikipedia.org", "Directory recursively scanned for pagecounts-$date-$time.gz files")
 	terms := flag.String("terms", "", "Comma separated list of terms to look for (required)")
+	outPath := flag.String("out", "", "Path to output CSV file (defaults to stdout)")
+	flag.BoolVar(&verbose, "verbose", false, "Print progress information to stderr")
 	flag.Parse()
 
 	wanted, err := parseTerms(*terms)
@@ -31,7 +37,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	writer := csv.NewWriter(os.Stdout)
+	out := io.Writer(os.Stdout)
+	if *outPath != "" && *outPath != "-" {
+		outFile, err := os.Create(*outPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output file %s: %v\n", *outPath, err)
+			os.Exit(1)
+		}
+		defer outFile.Close()
+		out = outFile
+	}
+
+	writer := csv.NewWriter(out)
 	defer writer.Flush()
 
 	filesScanned := 0
@@ -68,7 +85,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", filesScanned, rowsWritten)
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", filesScanned, rowsWritten)
+	}
 }
 
 // parseTerms maps every encoding of each requested term back to the term itself.
@@ -122,6 +141,7 @@ func extractFile(path, date, timeOfDay string, wanted map[string]string, writer 
 	scanner := bufio.NewScanner(gzipReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	t0 := time.Now()
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 3 || fields[0] != "en" {
@@ -137,6 +157,10 @@ func extractFile(path, date, timeOfDay string, wanted map[string]string, writer 
 			return rowsWritten, err
 		}
 		rowsWritten++
+	}
+	writer.Flush()
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Scanned %s in %.2f s\n", path, time.Since(t0).Seconds())
 	}
 
 	return rowsWritten, scanner.Err()
