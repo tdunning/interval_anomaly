@@ -170,15 +170,15 @@ func (m *ModelOutput) PredictLogCount(lags []float64) float64 {
 	return pred
 }
 
-// PredictExpectedCount calculates the predicted event count per bucket:
+// PredictRate calculates the predicted event/second rate per bucket:
 // expected_count = max(exp(y_hat) - epsilon, 0).
-func (m *ModelOutput) PredictExpectedCount(lags []float64) float64 {
+func (m *ModelOutput) PredictRate(lags []float64) float64 {
 	yHat := m.PredictLogCount(lags)
 	count := math.Exp(yHat)
 	if count < 0 {
 		return 0
 	}
-	return count
+	return count / m.BucketInterval
 }
 
 // Save writes the model JSON to a file or stdout.

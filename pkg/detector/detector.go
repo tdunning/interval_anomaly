@@ -24,7 +24,7 @@ type AnomalyRecord struct {
 // bucket counts and rolling event history to compute n-th order differences and anomaly statistics.
 type StreamDetector struct {
 	model         *model.ModelOutput
-	n             int
+	n             int                // order of time difference
 	recentEvents  []timeseries.Event // ring buffer / window for n-th order diff
 	bucketHistory []float64          // past p completed bucket counts (most recent lag first)
 	bucketRates   map[int64]float64  // estimated rate for each retained bucket
@@ -76,10 +76,10 @@ func (d *StreamDetector) advanceBuckets(newBucket int64) {
 	// For all buckets from currBucket up to newBucket-1, record their counts into history
 	// Bucket currBucket gets currCount, and any skipped buckets get 0 count.
 	d.pushBucketToHistory(d.currCount)
-	d.bucketRates[d.currBucket] = d.model.PredictExpectedCount(d.bucketHistory)
+	d.bucketRates[d.currBucket] = d.model.PredictRate(d.bucketHistory)
 	for b := d.currBucket + 1; b < newBucket; b++ {
 		d.pushBucketToHistory(0.0)
-		d.bucketRates[b] = d.model.PredictExpectedCount(d.bucketHistory)
+		d.bucketRates[b] = d.model.PredictRate(d.bucketHistory)
 	}
 
 	d.currBucket = newBucket
@@ -116,7 +116,7 @@ func (d *StreamDetector) expectedRateForInterval(startSeconds, endSeconds float6
 		if overlapEnd > overlapStart {
 			rate, ok := d.bucketRates[bucket]
 			if !ok {
-				rate = d.model.PredictExpectedCount(d.bucketHistory)
+				rate = d.model.PredictRate(d.bucketHistory)
 			}
 			weightedRate += rate * (overlapEnd - overlapStart)
 		}
@@ -164,7 +164,7 @@ func (d *StreamDetector) ProcessEvent(ev timeseries.Event) (*AnomalyRecord, erro
 			}
 		}
 
-		stat := diff / rateForDiv
+		stat := diff * rateForDiv / float64(d.n)
 
 		timeStr := ev.RawText
 		if timeStr == "" {
