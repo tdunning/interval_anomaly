@@ -31,38 +31,38 @@ func main() {
 	flag.Parse()
 
 	if *configPath == "" {
-		fmt.Fprintf(os.Stderr, "Error: -config parameter is required\n")
+		_, _ = fmt.Fprintf(os.Stderr, "Error: -config parameter is required\n")
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "=== Historical Event Analysis & Autoregressive Fit ===\n")
-	fmt.Fprintf(os.Stderr, "Loading configuration from: %s\n", *configPath)
+	_, _ = fmt.Fprintf(os.Stderr, "=== Historical Event Analysis & Autoregressive Fit ===\n")
+	_, _ = fmt.Fprintf(os.Stderr, "Loading configuration from: %s\n", *configPath)
 
 	cfg, err := model.LoadConfig(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
 		os.Exit(1)
 	}
 
 	if *wikiFormat {
 		cfg.BucketInterval = 3600.0
-		fmt.Fprintf(os.Stderr, "Wiki format selected: bucket_interval forced to 3600s (1 hour)\n")
+		_, _ = fmt.Fprintf(os.Stderr, "Wiki format selected: bucket_interval forced to 3600s (1 hour)\n")
 	}
 
-	fmt.Fprintf(os.Stderr, "Config loaded: bucket_interval=%.3fs, horizon=%d, lambda=%.4e, epsilon=%.4e\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Config loaded: bucket_interval=%.3fs, horizon=%d, lambda=%.4e, epsilon=%.4e\n",
 		cfg.BucketInterval, cfg.Horizon, cfg.RegularizationPenalty, cfg.Epsilon)
 
 	// Open input
 	var reader io.Reader
 	if *inputPath == "" || *inputPath == "-" {
-		fmt.Fprintf(os.Stderr, "Reading event data from stdin...\n")
+		_, _ = fmt.Fprintf(os.Stderr, "Reading event data from stdin...\n")
 		reader = os.Stdin
 	} else {
-		fmt.Fprintf(os.Stderr, "Reading event data from file: %s...\n", *inputPath)
+		_, _ = fmt.Fprintf(os.Stderr, "Reading event data from file: %s...\n", *inputPath)
 		file, err := os.Open(*inputPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)
 			os.Exit(1)
 		}
 		defer file.Close()
@@ -74,14 +74,14 @@ func main() {
 	var numEvents int
 
 	if *wikiFormat {
-		fmt.Fprintf(os.Stderr, "Reading hourly wiki counts...\n")
+		_, _ = fmt.Fprintf(os.Stderr, "Reading hourly wiki counts...\n")
 		bucketed, err = readWikiCounts(reader)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading wiki counts: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error reading wiki counts: %v\n", err)
 			os.Exit(1)
 		}
 		numEvents = bucketed.TotalEvents
-		fmt.Fprintf(os.Stderr, "Parsed %d views into %d hourly buckets\n", numEvents, len(bucketed.Counts))
+		_, _ = fmt.Fprintf(os.Stderr, "Parsed %d views into %d hourly buckets\n", numEvents, len(bucketed.Counts))
 	} else {
 		scanner := bufio.NewScanner(reader)
 		var events []timeseries.Event
@@ -105,46 +105,46 @@ func main() {
 		}
 
 		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 			os.Exit(1)
 		}
 
 		if len(events) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: no valid events parsed from input\n")
+			_, _ = fmt.Fprintf(os.Stderr, "Error: no valid events parsed from input\n")
 			os.Exit(1)
 		}
 
 		numEvents = len(events)
-		fmt.Fprintf(os.Stderr, "Parsed %d events across %d lines (skipped %d header/invalid lines)\n",
+		_, _ = fmt.Fprintf(os.Stderr, "Parsed %d events across %d lines (skipped %d header/invalid lines)\n",
 			len(events), lineNum, skippedHeader)
 
 		// Bucket events
-		fmt.Fprintf(os.Stderr, "Bucketing events with interval %.3f seconds...\n", cfg.BucketInterval)
+		_, _ = fmt.Fprintf(os.Stderr, "Bucketing events with interval %.3f seconds...\n", cfg.BucketInterval)
 		bucketed, err = timeseries.BucketEvents(events, cfg.BucketInterval)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error bucketing events: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error bucketing events: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Bucketing complete: %d buckets spanned from t=%.3f to t=%.3f\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Bucketing complete: %d buckets spanned from t=%.3f to t=%.3f\n",
 		len(bucketed.Counts), bucketed.StartTime, bucketed.StartTime+float64(len(bucketed.Counts))*cfg.BucketInterval)
 	if len(bucketed.Counts) > 0 {
 		bucketed.Counts = bucketed.Counts[:len(bucketed.Counts)-1]
-		fmt.Fprintf(os.Stderr, "Omitting final bucket; %d buckets remain for training\n", len(bucketed.Counts))
+		_, _ = fmt.Fprintf(os.Stderr, "Omitting final bucket; %d buckets remain for training\n", len(bucketed.Counts))
 	}
 
 	// Build AR dataset
-	fmt.Fprintf(os.Stderr, "Constructing autoregressive dataset (horizon=%d, epsilon=%.4e)...\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Constructing autoregressive dataset (horizon=%d, epsilon=%.4e)...\n",
 		cfg.Horizon, cfg.Epsilon)
 	dataset, err := bucketed.BuildARDataset(cfg.Horizon, cfg.Epsilon)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error constructing AR dataset: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error constructing AR dataset: %v\n", err)
 		os.Exit(1)
 	}
 
 	nSamples := len(dataset.Y)
-	fmt.Fprintf(os.Stderr, "Dataset constructed: %d training samples with %d lag features each\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Dataset constructed: %d training samples with %d lag features each\n",
 		nSamples, cfg.Horizon)
 
 	// Lasso regression
@@ -155,34 +155,34 @@ func main() {
 		FitIntercept:  cfg.FitIntercept,
 	}
 
-	fmt.Fprintf(os.Stderr, "Starting L1 regularized coordinate descent (max_iter=%d, tol=%.1e, lambda=%.4e)...\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Starting L1 regularized coordinate descent (max_iter=%d, tol=%.1e, lambda=%.4e)...\n",
 		lassoCfg.MaxIterations, lassoCfg.Tolerance, lassoCfg.Lambda)
 
 	progressCb := func(iter int, maxDelta float64, mse float64, nonZero int) {
-		fmt.Fprintf(os.Stderr, "  [Iter %4d] max_delta=%.6e  MSE=%.6f  active_features=%d/%d\n",
+		_, _ = fmt.Fprintf(os.Stderr, "  [Iter %4d] max_delta=%.6e  MSE=%.6f  active_features=%d/%d\n",
 			iter, maxDelta, mse, nonZero, cfg.Horizon)
 	}
 
 	fitRes, err := lasso.Fit(dataset.X, dataset.Y, lassoCfg, progressCb)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fitting L1 regression: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error fitting L1 regression: %v\n", err)
 		os.Exit(1)
 	}
 
 	if fitRes.Converged {
-		fmt.Fprintf(os.Stderr, "Optimization CONVERGED after %d iterations! Final MSE=%.6f, Non-zero weights=%d/%d\n",
+		_, _ = fmt.Fprintf(os.Stderr, "Optimization CONVERGED after %d iterations! Final MSE=%.6f, Non-zero weights=%d/%d\n",
 			fitRes.Iterations, fitRes.MSE, fitRes.NonZeroWeights, cfg.Horizon)
 	} else {
-		fmt.Fprintf(os.Stderr, "Optimization reached max iterations (%d). Final MSE=%.6f, Non-zero weights=%d/%d\n",
+		_, _ = fmt.Fprintf(os.Stderr, "Optimization reached max iterations (%d). Final MSE=%.6f, Non-zero weights=%d/%d\n",
 			fitRes.Iterations, fitRes.MSE, fitRes.NonZeroWeights, cfg.Horizon)
 	}
 
 	if *diagnosticPath != "" && *diagnosticPath != "-" {
 		if err := writeDiagnosticCSV(*diagnosticPath, bucketed, dataset, fitRes.Model); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing diagnostic CSV to %s: %v\n", *diagnosticPath, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error writing diagnostic CSV to %s: %v\n", *diagnosticPath, err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Diagnostic bucket rates successfully written to %s\n", *diagnosticPath)
+		_, _ = fmt.Fprintf(os.Stderr, "Diagnostic bucket rates successfully written to %s\n", *diagnosticPath)
 	}
 
 	// Prepare Model Output JSON
@@ -207,17 +207,17 @@ func main() {
 
 	jsonBytes, err := json.MarshalIndent(modelOutput, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error serializing model to JSON: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error serializing model to JSON: %v\n", err)
 		os.Exit(1)
 	}
 
 	if *outputPath != "" && *outputPath != "-" {
 		err = os.WriteFile(*outputPath, jsonBytes, 0644)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing model to %s: %v\n", *outputPath, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error writing model to %s: %v\n", *outputPath, err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Model parameters successfully written to %s\n", *outputPath)
+		_, _ = fmt.Fprintf(os.Stderr, "Model parameters successfully written to %s\n", *outputPath)
 	} else {
 		fmt.Println(string(jsonBytes))
 	}

@@ -32,7 +32,7 @@ func main() {
 
 	wanted, err := parseTerms(*terms)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -41,7 +41,7 @@ func main() {
 	if *outPath != "" && *outPath != "-" {
 		outFile, err := os.Create(*outPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating output file %s: %v\n", *outPath, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error creating output file %s: %v\n", *outPath, err)
 			os.Exit(1)
 		}
 		defer outFile.Close()
@@ -75,18 +75,18 @@ func main() {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", *inputDir, err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", *inputDir, err)
 		os.Exit(1)
 	}
 
 	writer.Flush()
 	if err := writer.Error(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
 		os.Exit(1)
 	}
 
 	if verbose {
-		fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", filesScanned, rowsWritten)
+		_, _ = fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", filesScanned, rowsWritten)
 	}
 }
 
@@ -118,7 +118,7 @@ func urlEncode(term string) string {
 		case c == '-', c == '_', c == '.', c == '~', c == ':', c == '/':
 			encoded.WriteByte(c)
 		default:
-			fmt.Fprintf(&encoded, "%%%02X", c)
+			_, _ = fmt.Fprintf(&encoded, "%%%02X", c)
 		}
 	}
 	return encoded.String()
@@ -160,7 +160,7 @@ func extractFile(path, date, timeOfDay string, wanted map[string]string, writer 
 	}
 	writer.Flush()
 	if verbose {
-		fmt.Fprintf(os.Stderr, "Scanned %s in %.2f s\n", path, time.Since(t0).Seconds())
+		_, _ = fmt.Fprintf(os.Stderr, "Scanned %s in %.2f s\n", path, time.Since(t0).Seconds())
 	}
 
 	return rowsWritten, scanner.Err()
