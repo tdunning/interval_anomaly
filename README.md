@@ -4,6 +4,9 @@ A Go toolkit for synthetic event generation, historical event frequency
 modeling using $L_1$-regularized autoregression (Lasso), and real-time
 anomaly detection on time interval differences.
 
+A nice description of the technique can be found in [this book on anomaly detection](
+https://www.oreilly.com/library/view/practical-machine-learning/9781491914151/)
+
 ## Command Line Applications
 
 1. **Synthetic Event Generator (`cmd/generate`)**
