@@ -81,6 +81,74 @@ func TestExtractFileSampleLines(t *testing.T) {
 	}
 }
 
+func TestProcessDumpsPreservesWalkOrder(t *testing.T) {
+	dir := t.TempDir()
+	for _, day := range []string{"01", "02", "03", "04", "05"} {
+		path := filepath.Join(dir, "pagecounts-201601"+day+"-000000.gz")
+		writeGzip(t, path, "en Thanksgiving "+day+" 7\n")
+	}
+
+	dumps, err := collectDumpFiles(dir)
+	if err != nil {
+		t.Fatalf("collectDumpFiles failed: %v", err)
+	}
+	if len(dumps) != 5 {
+		t.Fatalf("expected 5 dump files, got %d", len(dumps))
+	}
+
+	wanted, err := parseTerms("Thanksgiving")
+	if err != nil {
+		t.Fatalf("parseTerms failed: %v", err)
+	}
+
+	want := "20160101,000000,Thanksgiving,01,7\n" +
+		"20160102,000000,Thanksgiving,02,7\n" +
+		"20160103,000000,Thanksgiving,03,7\n" +
+		"20160104,000000,Thanksgiving,04,7\n" +
+		"20160105,000000,Thanksgiving,05,7\n"
+
+	// Output must not depend on how many workers race to finish first.
+	for _, threads := range []int{1, 3, 8} {
+		results, rows, err := processDumps(dumps, wanted, threads)
+		if err != nil {
+			t.Fatalf("processDumps(threads=%d) failed: %v", threads, err)
+		}
+		if rows != 5 {
+			t.Errorf("threads=%d: expected 5 rows, got %d", threads, rows)
+		}
+		if got := string(bytes.Join(results, nil)); got != want {
+			t.Errorf("threads=%d: unexpected order:\ngot  %q\nwant %q", threads, got, want)
+		}
+	}
+}
+
+func TestProcessDumpsReportsCorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pagecounts-20160101-000000.gz")
+	if err := os.WriteFile(path, []byte("this is not gzip data"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	dumps, err := collectDumpFiles(dir)
+	if err != nil {
+		t.Fatalf("collectDumpFiles failed: %v", err)
+	}
+	wanted, err := parseTerms("Thanksgiving")
+	if err != nil {
+		t.Fatalf("parseTerms failed: %v", err)
+	}
+
+	if _, _, err := processDumps(dumps, wanted, 4); err == nil {
+		t.Error("expected an error for a corrupt dump file")
+	}
+}
+
+func TestDefaultThreads(t *testing.T) {
+	if got := defaultThreads(); got < 1 {
+		t.Errorf("expected at least 1 thread, got %d", got)
+	}
+}
+
 func writeGzip(t *testing.T, path, contents string) {
 	t.Helper()
 	file, err := os.Create(path)

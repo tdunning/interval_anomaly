@@ -15,7 +15,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,10 +26,14 @@ var dumpFilePattern = regexp.MustCompile(`^pagecounts-(\d{8})-(\d{6})\.gz$`)
 
 var verbose bool
 
+// logMu keeps progress lines from interleaving across workers.
+var logMu sync.Mutex
+
 func main() {
 	inputDir := flag.String("input", "dumps.wikipedia.org", "Directory recursively scanned for pagecounts-$date-$time.gz files")
 	terms := flag.String("terms", "", "Comma separated list of terms to look for (required)")
 	outPath := flag.String("out", "", "Path to output CSV file (defaults to stdout)")
+	threads := flag.Int("threads", defaultThreads(), "Number of dump files to process concurrently")
 	flag.BoolVar(&verbose, "verbose", false, "Print progress information to stderr")
 	flag.Parse()
 
@@ -49,46 +55,140 @@ func main() {
 		out = outFile
 	}
 
-	writer := csv.NewWriter(out)
-	defer writer.Flush()
+	writer := bufio.NewWriter(out)
 
-	filesScanned := 0
-	rowsWritten := 0
+	dumps, err := collectDumpFiles(*inputDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", *inputDir, err)
+		os.Exit(1)
+	}
 
-	err = filepath.WalkDir(*inputDir, func(path string, entry fs.DirEntry, err error) error {
+	results, rowsWritten, err := processDumps(dumps, wanted, *threads)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Emit in walk order so output does not depend on completion order.
+	for _, chunk := range results {
+		if _, err := writer.Write(chunk); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if err := writer.Flush(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
+		os.Exit(1)
+	}
+
+	if verbose {
+		_, _ = fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", len(dumps), rowsWritten)
+	}
+}
+
+// defaultThreads leaves some headroom rather than saturating every core.
+func defaultThreads() int {
+	threads := runtime.NumCPU() * 8 / 10
+	if threads < 1 {
+		return 1
+	}
+	return threads
+}
+
+type dumpFile struct {
+	path      string
+	date      string
+	timeOfDay string
+}
+
+func collectDumpFiles(root string) ([]dumpFile, error) {
+	var dumps []dumpFile
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		match := dumpFilePattern.FindStringSubmatch(entry.Name())
-		if match == nil {
-			return nil
+		if match := dumpFilePattern.FindStringSubmatch(entry.Name()); match != nil {
+			dumps = append(dumps, dumpFile{path: path, date: match[1], timeOfDay: match[2]})
 		}
-
-		filesScanned++
-		written, err := extractFile(path, match[1], match[2], wanted, writer)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		rowsWritten += written
 		return nil
 	})
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", *inputDir, err)
-		os.Exit(1)
+	return dumps, err
+}
+
+// processDumps extracts each dump on a worker pool, returning per-file CSV chunks in input order.
+func processDumps(dumps []dumpFile, wanted map[string]string, threads int) ([][]byte, int, error) {
+	if threads < 1 {
+		threads = 1
+	}
+	if threads > len(dumps) {
+		threads = len(dumps)
 	}
 
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
-		os.Exit(1)
+	results := make([][]byte, len(dumps))
+	counts := make([]int, len(dumps))
+	queue := make(chan int)
+
+	var mu sync.Mutex
+	var firstErr error
+	failed := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return firstErr != nil
 	}
 
-	if verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "Scanned %d dump files, wrote %d matching rows\n", filesScanned, rowsWritten)
+	var wg sync.WaitGroup
+	for w := 0; w < threads; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Drain the queue even after a failure so the feeder can never block.
+			for i := range queue {
+				if failed() {
+					continue
+				}
+
+				var buf bytes.Buffer
+				writer := csv.NewWriter(&buf)
+				n, err := extractFile(dumps[i].path, dumps[i].date, dumps[i].timeOfDay, wanted, writer)
+				if err == nil {
+					err = writer.Error()
+				}
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("%s: %w", dumps[i].path, err)
+					}
+					mu.Unlock()
+					continue
+				}
+
+				results[i], counts[i] = buf.Bytes(), n
+			}
+		}()
 	}
+
+	for i := range dumps {
+		if failed() {
+			break
+		}
+		queue <- i
+	}
+	close(queue)
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, 0, firstErr
+	}
+
+	rowsWritten := 0
+	for _, n := range counts {
+		rowsWritten += n
+	}
+	return results, rowsWritten, nil
 }
 
 // parseTerms maps every encoding of each requested term back to the term itself.
@@ -174,7 +274,9 @@ func extractFile(path, date, timeOfDay string, wanted map[string]string, writer 
 	}
 	writer.Flush()
 	if verbose {
+		logMu.Lock()
 		_, _ = fmt.Fprintf(os.Stderr, "Scanned %s in %.2f s\n", path, time.Since(t0).Seconds())
+		logMu.Unlock()
 	}
 
 	return rowsWritten, scanner.Err()
