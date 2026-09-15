@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/csv"
 	"flag"
@@ -143,16 +144,29 @@ func extractFile(path, date, timeOfDay string, wanted map[string]string, writer 
 
 	t0 := time.Now()
 	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 3 || fields[0] != "en" {
+		// Reject on raw bytes first; only "en " lines can match, and Text/Fields
+		// would otherwise allocate for every line in the dump.
+		line := scanner.Bytes()
+		if len(line) < 3 || line[0] != 'e' || line[1] != 'n' || line[2] != ' ' {
 			continue
 		}
-		term, ok := wanted[fields[1]]
+
+		rest := line[3:]
+		titleEnd := bytes.IndexByte(rest, ' ')
+		if titleEnd <= 0 {
+			continue
+		}
+		term, ok := wanted[string(rest[:titleEnd])]
 		if !ok {
 			continue
 		}
 
-		row := append([]string{date, timeOfDay, term}, fields[2:]...)
+		data := strings.Fields(string(rest[titleEnd+1:]))
+		if len(data) == 0 {
+			continue
+		}
+
+		row := append([]string{date, timeOfDay, term}, data...)
 		if err := writer.Write(row); err != nil {
 			return rowsWritten, err
 		}
